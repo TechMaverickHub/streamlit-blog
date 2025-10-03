@@ -158,6 +158,7 @@ def blogs_page():
     if st.session_state.get("show_new") is None:
         st.session_state.show_new = False
 
+    # "New Blog" button
     cols = st.columns([3, 1])
     with cols[1]:
         if st.button("New Blog"):
@@ -175,7 +176,7 @@ def blogs_page():
             if resp.status_code in (200, 201):
                 st.success("Blog created")
                 st.session_state.show_new = False
-                st.experimental_rerun()
+                st.rerun()
             else:
                 try:
                     st.error(resp.json().get("message") or f"Create failed ({resp.status_code})")
@@ -197,6 +198,7 @@ def blogs_page():
     # --- Grid layout ---
     st.markdown('<div class="blog-grid">', unsafe_allow_html=True)
     for blog in results:
+        blog_id = blog.get("id")
         with st.container():
             st.markdown(f'''
             <div class="blog-card">
@@ -206,27 +208,45 @@ def blogs_page():
             </div>
             ''', unsafe_allow_html=True)
 
+            # Buttons row
             c1, c2, c3 = st.columns([1, 1, 1])
-            if c1.button("View", key=f"view_{blog.get('id')}"):
-                st.session_state.selected_blog_id = blog.get('id')
-                st.session_state.page = "blog_detail"
-                st.rerun()
-            if c2.button("Edit", key=f"edit_{blog.get('id')}"):
-                st.session_state.edit_blog = blog
-                st.session_state.page = "edit_blog"
-                st.rerun()
-            if c3.button("Delete", key=f"del_{blog.get('id')}"):
-                confirm = st.confirm(f"Delete blog '{blog.get('title')}'?")
-                if confirm:
-                    del_resp = api_delete(BLOG_DETAIL_ENDPOINT.format(id=blog.get('id')), auth=True)
-                    if del_resp.status_code in (200, 204):
-                        st.success("Deleted")
-                        st.rerun()
-                    else:
-                        try:
-                            st.error(del_resp.json().get('message') or f"Delete failed ({del_resp.status_code})")
-                        except Exception:
+
+            # View
+            with c1:
+                if st.button("View", key=f"view_{blog_id}"):
+                    st.session_state.selected_blog_id = blog_id
+                    st.session_state.page = "blog_detail"
+                    st.rerun()
+
+            # Edit
+            with c2:
+                if st.button("Edit", key=f"edit_{blog_id}"):
+                    st.session_state.edit_blog = blog
+                    st.session_state.page = "edit_blog"
+                    st.rerun()
+
+            # Delete
+            with c3:
+                delete_key = f"delete_{blog_id}"
+                confirm_key = f"confirm_delete_{blog_id}"
+
+                # Step 1: click Delete → show confirm
+                if st.button("Delete", key=delete_key):
+                    st.session_state[confirm_key] = True
+
+                # Step 2: confirm deletion
+                if st.session_state.get(confirm_key):
+                    if st.button("Confirm Delete", key=f"{delete_key}_confirm"):
+                        del_resp = api_delete(BLOG_DETAIL_ENDPOINT.format(id=blog_id), auth=True)
+                        if del_resp.status_code in (200, 204):
+                            st.success("Deleted successfully")
+                            # clean up state
+                            st.session_state.pop(confirm_key, None)
+                            st.rerun()
+                        else:
                             st.error(f"Delete failed: {del_resp.status_code}")
+                            st.session_state.pop(confirm_key, None)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 # Blog detail page
@@ -319,36 +339,49 @@ def suggestions_page():
 
 def run_app():
     st.sidebar.title("Navigation")
+
+    # Logout button
+    if st.session_state.access_token and st.sidebar.button("Logout"):
+        logout()
+        return
+
+    # Determine sidebar options
     if st.session_state.access_token:
-        nav = st.sidebar.radio("Go to", ["dashboard", "blogs", "suggestions"], index=["dashboard", "blogs", "suggestions"].index(st.session_state.page) if st.session_state.page in ["dashboard","blogs","suggestions"] else 0)
-        if st.sidebar.button("Logout"):
-            logout()
+        # Pages shown in sidebar
+        sidebar_pages = ["dashboard", "blogs", "suggestions"]
+
+        # Only show sidebar radio if the current page is a main page
+        if st.session_state.page not in ["blog_detail", "edit_blog"]:
+            # Preserve previous selection
+            default_index = sidebar_pages.index(st.session_state.page) if st.session_state.page in sidebar_pages else 0
+            st.session_state.page = st.sidebar.radio("Go to", sidebar_pages, index=default_index)
     else:
-        nav = st.sidebar.radio("Go to", ["login"])
+        # Only login visible if not logged in
+        st.session_state.page = st.sidebar.radio("Go to", ["login"])
 
-    st.session_state.page = nav
+    # Render the current page
+    page = st.session_state.page
 
-    if st.session_state.page == "login":
+    if page == "login":
         login_page()
-    elif st.session_state.page == "dashboard":
+    elif page == "dashboard":
         dashboard_page()
-    elif st.session_state.page == "blogs":
+    elif page == "blogs":
         if not st.session_state.access_token:
             st.warning("Please login first")
             st.session_state.page = "login"
-            st.rerun()
+            st.experimental_rerun()
         blogs_page()
-    elif st.session_state.page == "blog_detail":
+    elif page == "blog_detail":
         blog_detail_page()
-    elif st.session_state.page == "edit_blog":
+    elif page == "edit_blog":
         edit_blog_page()
-    elif st.session_state.page == "suggestions":
+    elif page == "suggestions":
         if not st.session_state.access_token:
             st.warning("Please login first")
             st.session_state.page = "login"
-            st.rerun()
+            st.experimental_rerun()
         suggestions_page()
-
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Blog Frontend", layout="wide")
