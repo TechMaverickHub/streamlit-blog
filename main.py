@@ -153,64 +153,81 @@ def dashboard_page():
 
 def blogs_page():
     st.title("Blogs")
-    cols = st.columns([2, 1])
+
+    # Show new blog form
+    if st.session_state.get("show_new") is None:
+        st.session_state.show_new = False
+
+    cols = st.columns([3, 1])
     with cols[1]:
         if st.button("New Blog"):
             st.session_state.show_new = True
+
     # Create new blog
-    if st.session_state.get("show_new"):
+    if st.session_state.show_new:
         with st.form("create_blog"):
             title = st.text_input("Title", key="new_title")
             content = st.text_area("Content", key="new_content")
-            sub = st.form_submit_button("Create")
-        if sub:
+            submitted = st.form_submit_button("Create")
+        if submitted:
             payload = {"title": title, "content": content}
             resp = api_post(BLOG_CREATE_ENDPOINT, payload, auth=True)
             if resp.status_code in (200, 201):
                 st.success("Blog created")
                 st.session_state.show_new = False
+                st.experimental_rerun()
             else:
                 try:
                     st.error(resp.json().get("message") or f"Create failed ({resp.status_code})")
                 except Exception:
                     st.error(f"Create failed: {resp.status_code}")
 
-    # List blogs
+    # Fetch blogs
     resp = api_get(BLOG_LIST_ENDPOINT, auth=True)
-    if resp.status_code == 200:
-        body = resp.json()
-        results = body.get("results") if isinstance(body, dict) else body
-        if not results:
-            st.info("No blogs yet.")
-            return
-        for blog in results:
-            with st.expander(f"{blog.get('title')} — by user {blog.get('user_id')}" ):
-                st.write(blog.get("content"))
-                c1, c2, c3 = st.columns(3)
-                if c1.button("View", key=f"view_{blog.get('id')}"):
-                    st.session_state.selected_blog_id = blog.get('id')
-                    st.session_state.page = "blog_detail"
-                    st.rerun()
-                if c2.button("Edit", key=f"edit_{blog.get('id')}"):
-                    st.session_state.edit_blog = blog
-                    st.session_state.page = "edit_blog"
-                    st.rerun()
-                if c3.button("Delete", key=f"del_{blog.get('id')}"):
-                    confirm = st.confirm(f"Delete blog '{blog.get('title')}'?")
-                    if confirm:
-                        del_resp = api_delete(BLOG_DETAIL_ENDPOINT.format(id=blog.get('id')), auth=True)
-                        if del_resp.status_code in (200, 204):
-                            st.success("Deleted")
-                            st.rerun()
-                        else:
-                            try:
-                                st.error(del_resp.json().get('message') or f"Delete failed ({del_resp.status_code})")
-                            except Exception:
-                                st.error(f"Delete failed: {del_resp.status_code}")
-
-    else:
+    if resp.status_code != 200:
         st.error(f"Could not fetch blogs: {resp.status_code}")
+        return
 
+    body = resp.json()
+    results = body.get("results") if isinstance(body, dict) else body
+    if not results:
+        st.info("No blogs yet.")
+        return
+
+    # --- Grid layout ---
+    st.markdown('<div class="blog-grid">', unsafe_allow_html=True)
+    for blog in results:
+        with st.container():
+            st.markdown(f'''
+            <div class="blog-card">
+                <h3>{blog.get("title")}</h3>
+                <div class="meta">By User {blog.get("user_id")}</div>
+                <div>{blog.get("content")[:150]}{'...' if len(blog.get("content")) > 150 else ''}</div>
+            </div>
+            ''', unsafe_allow_html=True)
+
+            c1, c2, c3 = st.columns([1, 1, 1])
+            if c1.button("View", key=f"view_{blog.get('id')}"):
+                st.session_state.selected_blog_id = blog.get('id')
+                st.session_state.page = "blog_detail"
+                st.rerun()
+            if c2.button("Edit", key=f"edit_{blog.get('id')}"):
+                st.session_state.edit_blog = blog
+                st.session_state.page = "edit_blog"
+                st.rerun()
+            if c3.button("Delete", key=f"del_{blog.get('id')}"):
+                confirm = st.confirm(f"Delete blog '{blog.get('title')}'?")
+                if confirm:
+                    del_resp = api_delete(BLOG_DETAIL_ENDPOINT.format(id=blog.get('id')), auth=True)
+                    if del_resp.status_code in (200, 204):
+                        st.success("Deleted")
+                        st.rerun()
+                    else:
+                        try:
+                            st.error(del_resp.json().get('message') or f"Delete failed ({del_resp.status_code})")
+                        except Exception:
+                            st.error(f"Delete failed: {del_resp.status_code}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Blog detail page
 
@@ -335,4 +352,32 @@ def run_app():
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Blog Frontend", layout="wide")
+    st.markdown(
+        """
+        <style>
+        body, .css-1d391kg { font-family: 'Poppins', sans-serif; }
+        .blog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+        .blog-card {
+            background-color: #fefcfb;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .blog-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 25px rgba(0,0,0,0.15);
+        }
+        .blog-card h3 { color: #333; margin-bottom: 0.5rem; }
+        .blog-card .meta { font-size: 0.85rem; color: #777; margin-bottom: 0.8rem; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     run_app()
