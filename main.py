@@ -370,7 +370,7 @@ def run_app():
         if not st.session_state.access_token:
             st.warning("Please login first")
             st.session_state.page = "login"
-            st.experimental_rerun()
+            st.rerun()
         blogs_page()
     elif page == "blog_detail":
         blog_detail_page()
@@ -380,7 +380,7 @@ def run_app():
         if not st.session_state.access_token:
             st.warning("Please login first")
             st.session_state.page = "login"
-            st.experimental_rerun()
+            st.rerun()
         suggestions_page()
 
 if __name__ == "__main__":
